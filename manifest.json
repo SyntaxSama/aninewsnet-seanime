@@ -15,5 +15,5 @@
         "version": "1",
         "permissions": {}
     },
-    "isDevelopment": true
+    "isDevelopment": false
 }
