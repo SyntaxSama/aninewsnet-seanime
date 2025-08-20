@@ -54,16 +54,34 @@ function init() {
             }
         }
 
-        async function fetchFullArticle(url: string) {
+        async function safeFetch(url: string, retries = 2, delay = 2000) {
+            for (let i = 0; i <= retries; i++) {
+                try {
+                    const res = await ctx.fetch(url, { timeout: 15000 });
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    return await res.text();
+                } catch (err) {
+                    if (i === retries) throw err;
+                    console.warn(`[tray-news-plugin] fetch failed (try ${i + 1}), retrying in ${delay}ms…`);
+                    await new Promise(r => setTimeout(r, delay));
+                }
+            }
+            throw new Error("Failed to fetch after retries");
+        }
+
+        async function fetchFullArticle(url: string, fallbackDesc?: string) {
             try {
-                const res = await ctx.fetch(url);
-                const html = await res.text();
-                const konaMatch = html.match(/<div class="KonaBody">([\s\S]*?)<\/div>\s*<\/div>/i);
-                if (!konaMatch) return "Full content unavailable.";
+                const html = await safeFetch(url);
 
-                const konaHTML = konaMatch[1];
+                const containerMatch =
+                    html.match(/<div class="KonaBody">([\s\S]*?)<\/div>\s*<\/div>/i) ||
+                    html.match(/<div class="news">([\s\S]*?)<\/div>/i) ||
+                    html.match(/<article[^>]*>([\s\S]*?)<\/article>/i);
 
-                const pMatches = [...konaHTML.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/gi)];
+                if (!containerMatch) return fallbackDesc || "Full content unavailable.";
+
+                const containerHTML = containerMatch[1];
+                const pMatches = [...containerHTML.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/gi)];
                 const paragraphs: string[] = [];
 
                 for (const m of pMatches) {
@@ -74,15 +92,14 @@ function init() {
                     if (text) paragraphs.push(text);
                 }
 
-                if (!paragraphs.length) return "No readable content found.";
+                if (paragraphs.length) return paragraphs.join("\n\n");
 
-                return paragraphs.join("\n\n");
+                return fallbackDesc || "No readable content found.";
             } catch (err) {
                 console.error("[tray-news-plugin] fetchFullArticle", err);
-                return "Failed to load full article.";
+                return fallbackDesc || "Failed to load full article.";
             }
         }
-
 
         fetchNews();
 
